@@ -12,24 +12,8 @@ from gfpgan.archs.gfpganv1_clean_arch import GFPGANv1Clean
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-
 class GFPGANer():
-    """Helper for restoration with GFPGAN.
-
-    It will detect and crop faces, and then resize the faces to 512x512.
-    GFPGAN is used to restored the resized faces.
-    The background is upsampled with the bg_upsampler.
-    Finally, the faces will be pasted back to the upsample background image.
-
-    Args:
-        model_path (str): The path to the GFPGAN model. It can be urls (will first download it automatically).
-        upscale (float): The upscale of the final output. Default: 2.
-        arch (str): The GFPGAN architecture. Option: clean | original. Default: clean.
-        channel_multiplier (int): Channel multiplier for large networks of StyleGAN2. Default: 2.
-        bg_upsampler (nn.Module): The upsampler for the background. Default: None.
-    """
-
-    def __init__(self, model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=None, device=None):
+    def __init__(self, face_detection_model_path, face_restoration_model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=None, device=None):
         self.upscale = upscale
         self.bg_upsampler = bg_upsampler
 
@@ -84,12 +68,9 @@ class GFPGANer():
             save_ext='png',
             use_parse=True,
             device=self.device,
-            model_rootpath='gfpgan/weights')
+            model_rootpath=face_detection_model_path)
 
-        if model_path.startswith('https://'):
-            model_path = load_file_from_url(
-                url=model_path, model_dir=os.path.join(ROOT_DIR, 'gfpgan/weights'), progress=True, file_name=None)
-        loadnet = torch.load(model_path)
+        loadnet = torch.load(face_restoration_model_path)
         if 'params_ema' in loadnet:
             keyname = 'params_ema'
         else:

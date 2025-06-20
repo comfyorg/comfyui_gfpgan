@@ -8,21 +8,24 @@ from tqdm import tqdm
 import folder_paths
 import comfy.model_management as model_management
 
-from utils import GFPGANer
+from .utils import GFPGANer
+
+FACE_DETECTION_MODEL_DIR = "face_detection"
+FACE_RESTORATION_MODELS_DIR = "face_restoration"
 
 # --- Model Download ---
 # Set up the models directory for GFPGAN
-gfpgan_dir = os.path.join(folder_paths.models_dir, "facerestore_models")
+gfpgan_dir = os.path.join(folder_paths.models_dir, FACE_RESTORATION_MODELS_DIR)
 if not os.path.exists(gfpgan_dir):
     os.makedirs(gfpgan_dir)
 
 # Add the gfpgan directory to folder_paths
-folder_paths.folder_names_and_paths["facerestore_models"] = ([gfpgan_dir], folder_paths.supported_pt_extensions)
+folder_paths.folder_names_and_paths[FACE_RESTORATION_MODELS_DIR] = ([gfpgan_dir], folder_paths.supported_pt_extensions)
 
 # Dictionary of model names and their download URLs
 MODEL_URLS = {
-    "GFPGANv1.3.pth": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth",
     "GFPGANv1.4.pth": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
+    "GFPGANv1.3.pth": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth",
     "RestoreFormer.pth": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/RestoreFormer.pth",
 }
 
@@ -73,13 +76,7 @@ class GFPGANRestorer:
 
     @classmethod
     def INPUT_TYPES(s):  
-        # Get available models, which could be more than just the downloadable ones
-        available_models = folder_paths.get_filename_list("facerestore_models")
-        # Add the known downloadable models to the list if they aren't already present
-        for model_name in MODEL_URLS.keys():
-            if model_name not in available_models:
-                available_models.insert(0, model_name)
-
+        available_models = list(MODEL_URLS.keys())
         return {
             "required": {
                 "image": ("IMAGE",),
@@ -97,7 +94,9 @@ class GFPGANRestorer:
         download_model(model_name, gfpgan_dir)
         
         device = model_management.get_torch_device()
-        model_path = folder_paths.get_full_path("facerestore_models", model_name)
+        
+        face_detection_model_path = folder_paths.get_full_path(FACE_DETECTION_MODEL_DIR, model_name)
+        face_restoration_model_path = folder_paths.get_full_path(FACE_RESTORATION_MODELS_DIR, model_name)
 
         # Load or reload model if necessary
         if self.gfpgan_model is None or self.last_model_name != model_name:
@@ -107,7 +106,7 @@ class GFPGANRestorer:
             channel_multiplier = 2
 
             try:
-                self.gfpgan_model = GFPGANer(model_path=model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
+                self.gfpgan_model = GFPGANer(face_detection_model_path=face_detection_model_path, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
                 self.last_model_name = model_name
             except Exception as e:
                 print(f"GFPGAN: Failed to load model {model_name}. Error: {e}")

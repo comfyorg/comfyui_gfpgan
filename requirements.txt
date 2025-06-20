@@ -2,5 +2,6 @@ gfpgan
 requests
 torch
 tqdm
-cv2
+opencv-python
 numpy
+basicsr-fixed

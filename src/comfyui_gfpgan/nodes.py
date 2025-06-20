@@ -5,25 +5,19 @@ import cv2
 import requests
 from tqdm import tqdm
 
-# ComfyUI essentials
 import folder_paths
 import comfy.model_management as model_management
 
-# Try to import the gfpgan module
-try:
-    from gfpgan import GFPGANer
-except ImportError:
-    print("GFPGAN module not found. Please run 'pip install gfpgan'.")
-    GFPGANer = None
+from utils import GFPGANer
 
 # --- Model Download ---
 # Set up the models directory for GFPGAN
-gfpgan_dir = os.path.join(folder_paths.models_dir, "gfpgan")
+gfpgan_dir = os.path.join(folder_paths.models_dir, "facerestore_models")
 if not os.path.exists(gfpgan_dir):
     os.makedirs(gfpgan_dir)
 
 # Add the gfpgan directory to folder_paths
-folder_paths.folder_names_and_paths["gfpgan"] = ([gfpgan_dir], folder_paths.supported_pt_extensions)
+folder_paths.folder_names_and_paths["facerestore_models"] = ([gfpgan_dir], folder_paths.supported_pt_extensions)
 
 # Dictionary of model names and their download URLs
 MODEL_URLS = {
@@ -41,7 +35,6 @@ def download_model(model_name, save_dir):
 
     save_path = os.path.join(save_dir, model_name)
     if os.path.exists(save_path):
-        print(f"GFPGAN: Model '{model_name}' already exists.")
         return
 
     print(f"GFPGAN: Downloading model '{model_name}' from {url}...")
@@ -73,20 +66,15 @@ def download_model(model_name, save_dir):
 class GFPGANRestorer:
     """
     A GFPGAN face restoration node for ComfyUI with automatic model downloading.
-    This node assumes it receives a cropped face image and applies GFPGAN restoration.
     """
     def __init__(self):
         self.gfpgan_model = None
         self.last_model_name = ""
 
     @classmethod
-    def INPUT_TYPES(s):
-        """Defines the input types for the node."""
-        if GFPGANer is None:
-            return {"required": {"text": ("STRING", {"multiline": True, "default": "GFPGAN not installed. Please run 'pip install gfpgan requests tqdm' in your environment."})}}
-            
+    def INPUT_TYPES(s):  
         # Get available models, which could be more than just the downloadable ones
-        available_models = folder_paths.get_filename_list("gfpgan")
+        available_models = folder_paths.get_filename_list("facerestore_models")
         # Add the known downloadable models to the list if they aren't already present
         for model_name in MODEL_URLS.keys():
             if model_name not in available_models:
@@ -102,26 +90,17 @@ class GFPGANRestorer:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "restore_face"
-    CATEGORY = "Ugly/Restoration"
+    CATEGORY = "restoration"
 
     def restore_face(self, image: torch.Tensor, model_name: str, upscale: float):
-        """The main execution method for the node."""
-        if GFPGANer is None:
-            raise ImportError("The 'gfpgan' package is not installed. Please install it to use this node.")
-
         # --- Download model if needed ---
         download_model(model_name, gfpgan_dir)
         
         device = model_management.get_torch_device()
-        model_path = folder_paths.get_full_path("gfpgan", model_name)
-
-        if not model_path:
-            print(f"GFPGAN: Model '{model_name}' not found. Please ensure it is downloaded or the name is correct.")
-            return (image,) # Return original image if model is not found after attempting download
+        model_path = folder_paths.get_full_path("facerestore_models", model_name)
 
         # Load or reload model if necessary
         if self.gfpgan_model is None or self.last_model_name != model_name:
-            print(f"GFPGAN: Loading model {model_name}...")
             if self.gfpgan_model: del self.gfpgan_model; torch.cuda.empty_cache()
 
             arch = 'RestoreFormer' if 'RestoreFormer' in model_name else 'clean'
@@ -130,7 +109,6 @@ class GFPGANRestorer:
             try:
                 self.gfpgan_model = GFPGANer(model_path=model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
                 self.last_model_name = model_name
-                print(f"GFPGAN: Model {model_name} loaded successfully.")
             except Exception as e:
                 print(f"GFPGAN: Failed to load model {model_name}. Error: {e}")
                 return (image,)
@@ -143,7 +121,7 @@ class GFPGANRestorer:
             img_bgr_np = cv2.cvtColor(img_rgb_np, cv2.COLOR_RGB2BGR)
 
             try:
-                _, _, restored_img = self.gfpgan_model.enhance(img_bgr_np, has_aligned=True, only_center_face=False, paste_back=True)
+                _, _, restored_img = self.gfpgan_model.enhance(img_bgr_np, paste_back=True)
             except Exception as e:
                 print(f"GFPGAN: Error during enhancement: {e}")
                 restored_img = img_bgr_np

@@ -16,9 +16,9 @@ This is a custom node for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) t
 
 3.  **Install Dependencies**
     ```bash
-    pip install -r comfyui_gfpgan/requirements.txt -c constraints.txt
+    pip install -r requirements.txt && pip install gfpgan --no-deps
     ```
-    > **Note:** The use of the `constraints.txt` file is necessary because `gfpgan` depends on the standard `basicsr` package, which is not compatible with the latest versions of PyTorch.
+    > **Note:** We use `pip install gfpgan --no-deps` to avoid installing `gfpgan`’s default dependency on the outdated `basicsr` package, which is incompatible with newer versions of PyTorch. Make sure you have `stablesr-fixed` installed in your environment instead of `stablesr`.
 
 
 ## Usage

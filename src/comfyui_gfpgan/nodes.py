@@ -108,7 +108,7 @@ class GFPGANRestorer:
             channel_multiplier = 2
 
             try:
-                self.gfpgan_model = GFPGANer(face_detection_model_path=model_detection_dir, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
+                self.gfpgan_model = GFPGANer(face_detection_model_path=model_detection_dir, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None, device=device)
                 self.last_model_name = model_name
             except Exception as e:
                 print(f"GFPGAN: Failed to load model {model_name}. Error: {e}")
@@ -131,7 +131,7 @@ class GFPGANRestorer:
             restored_tensor = torch.from_numpy(restored_img_rgb).float() / 255.0
             restored_images.append(restored_tensor)
 
-        output_tensor = torch.stack(restored_images).to(device)
+        output_tensor = torch.stack(restored_images).to("cpu")
         return (output_tensor,)
 
 NODE_CLASS_MAPPINGS = {"GFPGANRestorer": GFPGANRestorer}

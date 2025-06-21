@@ -14,13 +14,16 @@ FACE_DETECTION_MODEL_DIR = "face_detection"
 FACE_RESTORATION_MODELS_DIR = "face_restoration"
 
 # --- Model Download ---
-# Set up the models directory for GFPGAN
-gfpgan_dir = os.path.join(folder_paths.models_dir, FACE_RESTORATION_MODELS_DIR)
-if not os.path.exists(gfpgan_dir):
-    os.makedirs(gfpgan_dir)
-
-# Add the gfpgan directory to folder_paths
-folder_paths.folder_names_and_paths[FACE_RESTORATION_MODELS_DIR] = ([gfpgan_dir], folder_paths.supported_pt_extensions)
+# Set up the models directories for GFPGAN
+model_detection_dir = os.path.join(folder_paths.models_dir, FACE_DETECTION_MODEL_DIR)
+if not os.path.exists(model_detection_dir):
+    os.makedirs(model_detection_dir)
+folder_paths.folder_names_and_paths[FACE_DETECTION_MODEL_DIR] = ([model_detection_dir], folder_paths.supported_pt_extensions)
+    
+model_restoration_dir = os.path.join(folder_paths.models_dir, FACE_RESTORATION_MODELS_DIR)
+if not os.path.exists(model_restoration_dir):
+    os.makedirs(model_restoration_dir)
+folder_paths.folder_names_and_paths[FACE_RESTORATION_MODELS_DIR] = ([model_restoration_dir], folder_paths.supported_pt_extensions)
 
 # Dictionary of model names and their download URLs
 MODEL_URLS = {
@@ -91,11 +94,10 @@ class GFPGANRestorer:
 
     def restore_face(self, image: torch.Tensor, model_name: str, upscale: float):
         # --- Download model if needed ---
-        download_model(model_name, gfpgan_dir)
+        download_model(model_name, model_restoration_dir)
         
         device = model_management.get_torch_device()
         
-        face_detection_model_path = folder_paths.get_full_path(FACE_DETECTION_MODEL_DIR, model_name)
         face_restoration_model_path = folder_paths.get_full_path(FACE_RESTORATION_MODELS_DIR, model_name)
 
         # Load or reload model if necessary
@@ -106,7 +108,7 @@ class GFPGANRestorer:
             channel_multiplier = 2
 
             try:
-                self.gfpgan_model = GFPGANer(face_detection_model_path=face_detection_model_path, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
+                self.gfpgan_model = GFPGANer(face_detection_model_path=model_detection_dir, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None)
                 self.last_model_name = model_name
             except Exception as e:
                 print(f"GFPGAN: Failed to load model {model_name}. Error: {e}")

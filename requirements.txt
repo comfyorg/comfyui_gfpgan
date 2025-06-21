@@ -4,4 +4,3 @@ torch
 tqdm
 opencv-python
 numpy
-basicsr-fixed

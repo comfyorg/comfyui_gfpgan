@@ -84,15 +84,14 @@ class GFPGANRestorer:
             "required": {
                 "image": ("IMAGE",),
                 "model_name": (available_models,),
-                "upscale": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 4.0, "step": 0.1, "display": "number"}),
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = ("IMAGE", "MASK",)
     FUNCTION = "restore_face"
     CATEGORY = "restoration"
 
-    def restore_face(self, image: torch.Tensor, model_name: str, upscale: float):
+    def restore_face(self, image: torch.Tensor, model_name: str):
         # --- Download model if needed ---
         download_model(model_name, model_restoration_dir)
         
@@ -108,7 +107,7 @@ class GFPGANRestorer:
             channel_multiplier = 2
 
             try:
-                self.gfpgan_model = GFPGANer(face_detection_model_path=model_detection_dir, face_restoration_model_path=face_restoration_model_path, upscale=upscale, arch=arch, channel_multiplier=channel_multiplier, bg_upsampler=None, device=device)
+                self.gfpgan_model = GFPGANer(face_detection_model_path=model_detection_dir, face_restoration_model_path=face_restoration_model_path, arch=arch, channel_multiplier=channel_multiplier, device=device)
                 self.last_model_name = model_name
             except Exception as e:
                 print(f"GFPGAN: Failed to load model {model_name}. Error: {e}")
@@ -117,22 +116,29 @@ class GFPGANRestorer:
         # --- Image Processing ---
         batch_size = image.shape[0]
         restored_images = []
+        restored_masks = []
         for i in range(batch_size):
             img_rgb_np = (255. * image[i].cpu().numpy()).astype(np.uint8)
             img_bgr_np = cv2.cvtColor(img_rgb_np, cv2.COLOR_RGB2BGR)
 
             try:
-                _, _, restored_img = self.gfpgan_model.enhance(img_bgr_np, paste_back=True)
+                restored_img, mask = self.gfpgan_model.enhance(img_bgr_np, weight=0.5)
             except Exception as e:
                 print(f"GFPGAN: Error during enhancement: {e}")
                 restored_img = img_bgr_np
+                h, w, _ = restored_img.shape
+                mask = np.zeros((h, w), dtype=np.uint8)
 
             restored_img_rgb = cv2.cvtColor(restored_img, cv2.COLOR_BGR2RGB)
             restored_tensor = torch.from_numpy(restored_img_rgb).float() / 255.0
             restored_images.append(restored_tensor)
 
-        output_tensor = torch.stack(restored_images).to("cpu")
-        return (output_tensor,)
+            mask_tensor = torch.from_numpy(mask).float() / 255.0
+            restored_masks.append(mask_tensor)
+
+        output_images_tensor = torch.stack(restored_images).to("cpu")
+        output_masks_tensor = torch.stack(restored_masks).to("cpu")
+        return (output_images_tensor, output_masks_tensor,)
 
 NODE_CLASS_MAPPINGS = {"GFPGANRestorer": GFPGANRestorer}
 NODE_DISPLAY_NAME_MAPPINGS = {"GFPGANRestorer": "GFPGAN Face Restore"}

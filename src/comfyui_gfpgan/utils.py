@@ -1,8 +1,8 @@
 import cv2
 import os
 import torch
+import numpy as np
 from basicsr.utils import img2tensor, tensor2img
-from basicsr.utils.download_util import load_file_from_url
 from facexlib.utils.face_restoration_helper import FaceRestoreHelper
 from torchvision.transforms.functional import normalize
 
@@ -13,10 +13,7 @@ from gfpgan.archs.gfpganv1_clean_arch import GFPGANv1Clean
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class GFPGANer():
-    def __init__(self, face_detection_model_path, face_restoration_model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=None, device=None):
-        self.upscale = upscale
-        self.bg_upsampler = bg_upsampler
-
+    def __init__(self, face_detection_model_path, face_restoration_model_path, arch='clean', channel_multiplier=2, device=None):
         # initialize model
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
         # initialize the GFP-GAN
@@ -61,7 +58,7 @@ class GFPGANer():
             self.gfpgan = RestoreFormer()
         # initialize face helper
         self.face_helper = FaceRestoreHelper(
-            upscale,
+            1,
             face_size=512,
             crop_ratio=(1, 1),
             det_model='retinaface_resnet50',
@@ -80,20 +77,39 @@ class GFPGANer():
         self.gfpgan = self.gfpgan.to(self.device)
 
     @torch.no_grad()
-    def enhance(self, img, has_aligned=False, only_center_face=False, paste_back=True, weight=0.5):
+    def enhance(self, img, weight=0.5, detection_size=1560):
         self.face_helper.clean_all()
+        
+        original_img = img.copy()
+        h_orig, w_orig, _ = original_img.shape
 
-        if has_aligned:  # the inputs are already aligned
-            img = cv2.resize(img, (512, 512))
-            self.face_helper.cropped_faces = [img]
-        else:
-            self.face_helper.read_image(img)
-            # get face landmarks for each face
-            self.face_helper.get_face_landmarks_5(only_center_face=only_center_face, eye_dist_threshold=5)
-            # eye_dist_threshold=5: skip faces whose eye distance is smaller than 5 pixels
-            # TODO: even with eye_dist_threshold, it will still introduce wrong detections and restorations.
-            # align and warp each face
-            self.face_helper.align_warp_face()
+        # ------------------- MODIFICATION FOR DETECTION SIZING -------------------
+        # Calculate the scale factor to resize the image for detection
+        scale = 1.0
+        if max(h_orig, w_orig) != detection_size:
+             scale = detection_size / max(h_orig, w_orig)
+        
+        # Create a resized version of the image for face detection
+        h_det, w_det = int(h_orig * scale), int(w_orig * scale)
+        detection_img = cv2.resize(original_img, (w_det, h_det), interpolation=cv2.INTER_AREA)
+
+        # Perform detection on the resized image
+        self.face_helper.read_image(detection_img)
+        self.face_helper.get_face_landmarks_5(only_center_face=False, eye_dist_threshold=5)
+
+        # Scale the landmarks and bounding boxes back to the original image's coordinates
+        if scale != 1.0:
+            for i in range(len(self.face_helper.det_faces)):
+                self.face_helper.det_faces[i][:4] /= scale
+            for i in range(len(self.face_helper.all_landmarks_5)):
+                self.face_helper.all_landmarks_5[i] /= scale
+                
+        # Set the helper to use the original, full-resolution image for subsequent steps
+        self.face_helper.input_img = original_img
+        # --------------------------------------------------------------------------
+
+        # align and warp each face
+        self.face_helper.align_warp_face()
 
         # face restoration
         for cropped_face in self.face_helper.cropped_faces:
@@ -113,17 +129,39 @@ class GFPGANer():
             restored_face = restored_face.astype('uint8')
             self.face_helper.add_restored_face(restored_face)
 
-        if not has_aligned and paste_back:
-            # upsample the background
-            if self.bg_upsampler is not None:
-                # Now only support RealESRGAN for upsampling background
-                bg_img = self.bg_upsampler.enhance(img, outscale=self.upscale)[0]
-            else:
-                bg_img = None
+        self.face_helper.get_inverse_affine()
+        
+        restored_img = self.face_helper.paste_faces_to_input_image()
+        
+        h, w, _ = restored_img.shape
+        final_soft_mask = np.zeros((h, w), dtype=np.float32)
 
-            self.face_helper.get_inverse_affine(None)
-            # paste each restored face to the input image
-            restored_img = self.face_helper.paste_faces_to_input_image(upsample_img=bg_img)
-            return self.face_helper.cropped_faces, self.face_helper.restored_faces, restored_img
-        else:
-            return self.face_helper.cropped_faces, self.face_helper.restored_faces, None
+        if self.face_helper.use_parse:
+            for restored_face, inverse_affine in zip(self.face_helper.restored_faces, self.face_helper.inverse_affine_matrices):
+                face_input = cv2.resize(restored_face, (512, 512), interpolation=cv2.INTER_LINEAR)
+                face_input = img2tensor(face_input.astype('float32') / 255., bgr2rgb=True, float32=True)
+                normalize(face_input, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+                face_input = torch.unsqueeze(face_input, 0).to(self.device)
+                with torch.no_grad():
+                    out = self.face_helper.face_parse(face_input)[0]
+                parsing_map = out.argmax(dim=1).squeeze().cpu().numpy()
+
+                temp_mask = np.zeros(parsing_map.shape, dtype=np.uint8)
+                MASK_COLORMAP = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 0, 0, 0]
+                for idx, color in enumerate(MASK_COLORMAP):
+                    temp_mask[parsing_map == idx] = color
+
+                kernel = np.ones((5, 5), np.uint8)
+
+                cleaned_mask = cv2.morphologyEx(temp_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+                cleaned_mask = cv2.morphologyEx(cleaned_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+                
+                face_mask_template = cv2.resize(cleaned_mask, restored_face.shape[:2]).astype(np.float32) / 255
+                
+                warped_mask = cv2.warpAffine(face_mask_template, inverse_affine, (w, h))
+                
+                final_soft_mask = np.maximum(final_soft_mask, warped_mask)
+        
+        pasting_mask = (final_soft_mask * 255).astype(np.uint8) 
+        return restored_img, pasting_mask

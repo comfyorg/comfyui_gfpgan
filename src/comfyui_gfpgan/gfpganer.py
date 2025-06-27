@@ -3,7 +3,7 @@ import os
 import torch
 import numpy as np
 from basicsr.utils import img2tensor, tensor2img
-from facexlib.utils.face_restoration_helper import FaceRestoreHelper
+from .face_restore_helper import FaceRestoreHelper
 from torchvision.transforms.functional import normalize
 
 from gfpgan.archs.gfpgan_bilinear_arch import GFPGANBilinear
@@ -137,31 +137,19 @@ class GFPGANer():
         final_soft_mask = np.zeros((h, w), dtype=np.float32)
 
         if self.face_helper.use_parse:
-            for restored_face, inverse_affine in zip(self.face_helper.restored_faces, self.face_helper.inverse_affine_matrices):
-                face_input = cv2.resize(restored_face, (512, 512), interpolation=cv2.INTER_LINEAR)
-                face_input = img2tensor(face_input.astype('float32') / 255., bgr2rgb=True, float32=True)
-                normalize(face_input, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
-                face_input = torch.unsqueeze(face_input, 0).to(self.device)
-                with torch.no_grad():
-                    out = self.face_helper.face_parse(face_input)[0]
-                parsing_map = out.argmax(dim=1).squeeze().cpu().numpy()
+            if not self.face_helper.soft_masks:
+                warnings.warn('soft_masks list is empty. Returning an empty pasting_mask.')
+            else:
+                for soft_mask in self.face_helper.soft_masks:
+                    if soft_mask.ndim == 3 and soft_mask.shape[2] == 1:
+                        soft_mask = np.squeeze(soft_mask, axis=2)
 
-                temp_mask = np.zeros(parsing_map.shape, dtype=np.uint8)
-                MASK_COLORMAP = [0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 0, 0, 0]
-                for idx, color in enumerate(MASK_COLORMAP):
-                    temp_mask[parsing_map == idx] = color
+                    if soft_mask.shape != (h, w):
+                        warnings.warn(f'Soft mask shape {soft_mask.shape} does not match image shape {(h, w)}. Resizing mask.')
+                        soft_mask = cv2.resize(soft_mask, (w, h))
 
-                kernel = np.ones((5, 5), np.uint8)
+                    final_soft_mask = np.maximum(final_soft_mask, soft_mask)
 
-                cleaned_mask = cv2.morphologyEx(temp_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        pasting_mask = (final_soft_mask * 255).astype(np.uint8)
 
-                cleaned_mask = cv2.morphologyEx(cleaned_mask, cv2.MORPH_OPEN, kernel, iterations=1)
-                
-                face_mask_template = cv2.resize(cleaned_mask, restored_face.shape[:2]).astype(np.float32) / 255
-                
-                warped_mask = cv2.warpAffine(face_mask_template, inverse_affine, (w, h))
-                
-                final_soft_mask = np.maximum(final_soft_mask, warped_mask)
-        
-        pasting_mask = (final_soft_mask * 255).astype(np.uint8) 
         return restored_img, pasting_mask

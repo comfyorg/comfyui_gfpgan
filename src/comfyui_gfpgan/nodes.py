@@ -8,7 +8,7 @@ from tqdm import tqdm
 import folder_paths
 import comfy.model_management as model_management
 
-from .utils import GFPGANer
+from .gfpganer import GFPGANer
 
 FACE_DETECTION_MODEL_DIR = "face_detection"
 FACE_RESTORATION_MODELS_DIR = "face_restoration"

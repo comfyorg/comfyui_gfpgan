@@ -137,7 +137,7 @@ class FaceRestoreHelper(object):
             input_img = cv2.resize(self.input_img, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
         with torch.no_grad():
-            bboxes = self.face_det.detect_faces(input_img, 0.97) * scale
+            bboxes = self.face_det.detect_faces(input_img, 0.99) * scale
         for bbox in bboxes:
             # remove faces with too small eye distance: side faces or too small faces
             eye_dist = np.linalg.norm([bbox[5] - bbox[7], bbox[6] - bbox[8]])

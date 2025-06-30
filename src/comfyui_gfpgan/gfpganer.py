@@ -95,7 +95,7 @@ class GFPGANer():
 
         # Perform detection on the resized image
         self.face_helper.read_image(detection_img)
-        self.face_helper.get_face_landmarks_5(only_center_face=False, eye_dist_threshold=5)
+        self.face_helper.get_face_landmarks_5(only_center_face=False, eye_dist_threshold=15)
 
         # Scale the landmarks and bounding boxes back to the original image's coordinates
         if scale != 1.0:

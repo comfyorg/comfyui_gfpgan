@@ -14,7 +14,12 @@ This is a custom node for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) t
     git clone https://github.com/lucak5s/comfyui_gfpgan.git
     ```
 
-3.  **Install Dependencies**
+3. **Enter the Cloned Directory**  
+    ```bash
+    cd comfyui_gfpgan
+    ```
+
+4.  **Install Dependencies**
     ```bash
     pip install -r requirements.txt && pip install gfpgan --no-deps
     ```

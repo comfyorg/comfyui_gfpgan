@@ -124,6 +124,7 @@ class FaceRestoreHelper(object):
     def get_face_landmarks_5(self,
                              only_keep_largest=False,
                              only_center_face=False,
+                             max_faces=None,
                              resize=None,
                              blur_ratio=0.01,
                              eye_dist_threshold=None):
@@ -152,7 +153,20 @@ class FaceRestoreHelper(object):
             self.det_faces.append(bbox[0:5])
         if len(self.det_faces) == 0:
             return 0
-        if only_keep_largest:
+            
+        if max_faces is not None and len(self.det_faces) > max_faces:
+            h, w, _ = self.input_img.shape
+            face_areas = []
+            for det_face in self.det_faces:
+                face_area = (det_face[2] - det_face[0]) * (det_face[3] - det_face[1])
+                face_areas.append(face_area)
+            
+            sorted_indices = np.argsort(face_areas)[::-1]
+            top_indices = sorted_indices[:max_faces]
+            
+            self.det_faces = [self.det_faces[i] for i in top_indices]
+            self.all_landmarks_5 = [self.all_landmarks_5[i] for i in top_indices]
+        elif only_keep_largest:
             h, w, _ = self.input_img.shape
             self.det_faces, largest_idx = get_largest_face(self.det_faces, h, w)
             self.all_landmarks_5 = [self.all_landmarks_5[largest_idx]]
